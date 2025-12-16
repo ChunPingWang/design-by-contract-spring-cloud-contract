@@ -1,0 +1,83 @@
+name: Payment Service CI
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'payment-service/**'
+      - 'build.gradle'
+      - 'settings.gradle'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'payment-service/**'
+      - 'build.gradle'
+      - 'settings.gradle'
+
+jobs:
+  contract-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    # First, build and publish account-service stubs to local Maven
+    - name: Build account-service stubs
+      run: ./gradlew :account-service:build :account-service:publishToMavenLocal
+
+    - name: Build payment-service
+      run: ./gradlew :payment-service:build
+
+    - name: Run contract tests against account-service stubs
+      run: ./gradlew :payment-service:test
+
+    - name: Upload test reports
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: payment-test-reports
+        path: |
+          payment-service/build/reports/tests/
+          payment-service/build/reports/cucumber/
+
+  integration-test:
+    needs: contract-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    # Build both services
+    - name: Build all services
+      run: ./gradlew build
+
+    # In a real scenario, you would run integration tests here
+    # - name: Start services
+    #   run: docker-compose up -d
+    # - name: Run integration tests
+    #   run: ./gradlew integrationTest
+    # - name: Stop services
+    #   run: docker-compose down

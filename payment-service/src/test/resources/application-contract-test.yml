@@ -1,0 +1,20 @@
+server:
+  port: 0
+
+spring:
+  application:
+    name: payment-service-contract-test
+
+# Stub Runner will run on port 8080
+account-service:
+  url: http://localhost:8080
+
+stubrunner:
+  ids:
+    - com.example:account-service:+:stubs:8080
+  stubs-mode: LOCAL
+
+logging:
+  level:
+    com.example.payment: DEBUG
+    org.springframework.cloud.contract: DEBUG

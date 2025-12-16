@@ -1,0 +1,465 @@
+openapi: 3.0.3
+info:
+  title: Account Service API
+  description: |
+    帳戶服務 API 規格文件
+
+    本 API 採用 Design by Contract 原則設計：
+    - Precondition: 每個端點明確定義輸入條件
+    - Postcondition: 每個端點明確定義輸出保證
+    - Invariant: 帳戶餘額永遠不可為負數
+  version: 1.0.0
+  contact:
+    name: Account Service Team
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+  - url: http://account-service:8080
+    description: Docker/Kubernetes
+
+tags:
+  - name: Account
+    description: 帳戶管理相關操作
+
+paths:
+  /api/v1/accounts/{accountId}:
+    get:
+      tags:
+        - Account
+      summary: 查詢帳戶
+      description: |
+        查詢指定帳戶的詳細資訊
+
+        **Precondition**: accountId 格式為 ACC-XXX，帳戶存在
+        **Postcondition**: 返回帳戶資訊，包含 accountId, balance, status
+        **Invariant**: balance >= 0
+      operationId: getAccount
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          description: 帳戶識別碼
+          schema:
+            type: string
+            pattern: ^ACC-\d+$
+            example: ACC-001
+      responses:
+        '200':
+          description: 成功返回帳戶資訊
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+              example:
+                accountId: ACC-001
+                accountHolder: 王大明
+                balance: 10000.00
+                currency: TWD
+                status: ACTIVE
+                createdAt: '2024-01-15T10:30:00Z'
+                updatedAt: '2024-01-15T10:30:00Z'
+        '404':
+          description: 帳戶不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                errorCode: ACCOUNT_NOT_FOUND
+                message: 帳戶不存在
+                timestamp: '2024-01-15T10:30:00Z'
+                path: /api/v1/accounts/ACC-999
+
+  /api/v1/accounts:
+    post:
+      tags:
+        - Account
+      summary: 建立帳戶
+      description: |
+        建立新帳戶
+
+        **Precondition**: accountHolder 不為空，currency 為有效 ISO 4217 代碼
+        **Postcondition**: 返回新建立的帳戶，狀態為 PENDING，餘額為 0
+        **Invariant**: balance >= 0
+      operationId: createAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAccountRequest'
+            example:
+              accountHolder: 王大明
+              currency: TWD
+      responses:
+        '201':
+          description: 帳戶建立成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '400':
+          description: 請求參數錯誤
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/accounts/{accountId}/debit:
+    post:
+      tags:
+        - Account
+      summary: 帳戶扣款
+      description: |
+        從帳戶扣除指定金額
+
+        **Precondition**:
+        - amount > 0
+        - amount <= balance
+        - 帳戶狀態為 ACTIVE
+
+        **Postcondition**: newBalance = oldBalance - amount
+
+        **Invariant**: balance >= 0
+      operationId: debitAccount
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          description: 帳戶識別碼
+          schema:
+            type: string
+            pattern: ^ACC-\d+$
+            example: ACC-001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DebitRequest'
+            example:
+              transactionId: TXN-20240115-001
+              amount: 1000.00
+              currency: TWD
+              description: 消費扣款
+              merchantId: MERCHANT-001
+      responses:
+        '200':
+          description: 扣款成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DebitResponse'
+              example:
+                transactionId: TXN-20240115-001
+                accountId: ACC-001
+                status: SUCCESS
+                previousBalance: 10000.00
+                amount: 1000.00
+                newBalance: 9000.00
+                processedAt: '2024-01-15T10:30:00Z'
+        '400':
+          description: 扣款失敗（餘額不足、帳戶凍結等）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                insufficientBalance:
+                  summary: 餘額不足
+                  value:
+                    errorCode: INSUFFICIENT_BALANCE
+                    message: 餘額不足
+                    details:
+                      accountId: ACC-002
+                      currentBalance: 500.00
+                      requestedAmount: 99999.00
+                      shortfall: 99499.00
+                    timestamp: '2024-01-15T10:30:00Z'
+                accountFrozen:
+                  summary: 帳戶凍結
+                  value:
+                    errorCode: ACCOUNT_FROZEN
+                    message: 帳戶已凍結，無法進行交易
+                    timestamp: '2024-01-15T10:30:00Z'
+        '404':
+          description: 帳戶不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/accounts/{accountId}/freeze:
+    post:
+      tags:
+        - Account
+      summary: 凍結帳戶
+      description: |
+        凍結指定帳戶
+
+        **Precondition**: 帳戶存在且狀態為 ACTIVE
+        **Postcondition**: 帳戶狀態變更為 FROZEN
+      operationId: freezeAccount
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^ACC-\d+$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FreezeAccountRequest'
+      responses:
+        '200':
+          description: 帳戶已凍結
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '400':
+          description: 無法凍結（狀態不允許）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 帳戶不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/accounts/{accountId}/unfreeze:
+    post:
+      tags:
+        - Account
+      summary: 解凍帳戶
+      description: |
+        解除帳戶凍結
+
+        **Precondition**: 帳戶存在且狀態為 FROZEN
+        **Postcondition**: 帳戶狀態變更為 ACTIVE
+      operationId: unfreezeAccount
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^ACC-\d+$
+      responses:
+        '200':
+          description: 帳戶已解凍
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '400':
+          description: 無法解凍（狀態不允許）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 帳戶不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    Account:
+      type: object
+      required:
+        - accountId
+        - accountHolder
+        - balance
+        - currency
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        accountId:
+          type: string
+          pattern: ^ACC-\d+$
+          description: 帳戶識別碼
+          example: ACC-001
+        accountHolder:
+          type: string
+          minLength: 2
+          maxLength: 50
+          description: 帳戶持有人姓名
+          example: 王大明
+        balance:
+          type: number
+          format: decimal
+          minimum: 0
+          description: 帳戶餘額
+          example: 10000.00
+        currency:
+          type: string
+          pattern: ^[A-Z]{3}$
+          description: 幣別代碼 (ISO 4217)
+          example: TWD
+        status:
+          $ref: '#/components/schemas/AccountStatus'
+        createdAt:
+          type: string
+          format: date-time
+          description: 建立時間 (UTC)
+          example: '2024-01-15T10:30:00Z'
+        updatedAt:
+          type: string
+          format: date-time
+          description: 更新時間 (UTC)
+          example: '2024-01-15T10:30:00Z'
+
+    AccountStatus:
+      type: string
+      enum:
+        - PENDING
+        - ACTIVE
+        - FROZEN
+        - CLOSED
+      description: |
+        帳戶狀態
+        - PENDING: 待啟用
+        - ACTIVE: 啟用中
+        - FROZEN: 凍結中
+        - CLOSED: 已關閉
+
+    CreateAccountRequest:
+      type: object
+      required:
+        - accountHolder
+        - currency
+      properties:
+        accountHolder:
+          type: string
+          minLength: 2
+          maxLength: 50
+          description: 帳戶持有人姓名
+        currency:
+          type: string
+          pattern: ^[A-Z]{3}$
+          description: 幣別代碼 (ISO 4217)
+
+    DebitRequest:
+      type: object
+      required:
+        - transactionId
+        - amount
+        - currency
+      properties:
+        transactionId:
+          type: string
+          pattern: ^TXN-\d{8}-\d{3}$
+          description: 交易識別碼
+          example: TXN-20240115-001
+        amount:
+          type: number
+          format: decimal
+          minimum: 0.01
+          description: 扣款金額
+          example: 1000.00
+        currency:
+          type: string
+          pattern: ^[A-Z]{3}$
+          description: 幣別代碼
+          example: TWD
+        description:
+          type: string
+          maxLength: 200
+          description: 交易描述
+          example: 消費扣款
+        merchantId:
+          type: string
+          description: 商家識別碼
+          example: MERCHANT-001
+
+    DebitResponse:
+      type: object
+      required:
+        - transactionId
+        - accountId
+        - status
+        - previousBalance
+        - amount
+        - newBalance
+        - processedAt
+      properties:
+        transactionId:
+          type: string
+          description: 交易識別碼
+        accountId:
+          type: string
+          description: 帳戶識別碼
+        status:
+          type: string
+          enum:
+            - SUCCESS
+            - FAILED
+          description: 交易狀態
+        previousBalance:
+          type: number
+          format: decimal
+          description: 交易前餘額
+        amount:
+          type: number
+          format: decimal
+          description: 扣款金額
+        newBalance:
+          type: number
+          format: decimal
+          description: 交易後餘額
+        processedAt:
+          type: string
+          format: date-time
+          description: 處理時間
+
+    FreezeAccountRequest:
+      type: object
+      required:
+        - reason
+        - operatorId
+      properties:
+        reason:
+          type: string
+          maxLength: 500
+          description: 凍結原因
+        operatorId:
+          type: string
+          description: 操作人員識別碼
+
+    ErrorResponse:
+      type: object
+      required:
+        - errorCode
+        - message
+        - timestamp
+      properties:
+        errorCode:
+          type: string
+          description: 錯誤代碼
+          example: ACCOUNT_NOT_FOUND
+        message:
+          type: string
+          description: 錯誤訊息
+          example: 帳戶不存在
+        timestamp:
+          type: string
+          format: date-time
+          description: 錯誤發生時間
+        path:
+          type: string
+          description: 請求路徑
+        details:
+          type: object
+          description: 額外錯誤細節
+          additionalProperties: true

@@ -1,0 +1,86 @@
+name: Account Service CI
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'account-service/**'
+      - 'build.gradle'
+      - 'settings.gradle'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'account-service/**'
+      - 'build.gradle'
+      - 'settings.gradle'
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Build account-service
+      run: ./gradlew :account-service:build
+
+    - name: Run contract tests
+      run: ./gradlew :account-service:contractTest
+
+    - name: Generate stub JAR
+      run: ./gradlew :account-service:verifierStubsJar
+
+    - name: Upload test reports
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-reports
+        path: |
+          account-service/build/reports/tests/
+          account-service/build/reports/cucumber/
+
+    - name: Upload stub JAR
+      uses: actions/upload-artifact@v4
+      with:
+        name: account-service-stubs
+        path: account-service/build/libs/*-stubs.jar
+
+  publish-stubs:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Publish stubs to Maven Local
+      run: ./gradlew :account-service:publishToMavenLocal
+
+    # In a real scenario, you would publish to a remote Maven repository
+    # - name: Publish stubs to Maven Repository
+    #   run: ./gradlew :account-service:publish
+    #   env:
+    #     MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
+    #     MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}

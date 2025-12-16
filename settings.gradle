@@ -1,0 +1,4 @@
+rootProject.name = 'design-by-contract-spring-cloud-contract'
+
+include 'account-service'
+include 'payment-service'

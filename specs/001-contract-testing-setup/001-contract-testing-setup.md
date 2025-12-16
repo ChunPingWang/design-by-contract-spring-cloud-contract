@@ -1,0 +1,131 @@
+# Specification Analysis Report: Spring Cloud Contract 契約測試系統
+
+**Feature**: 001-contract-testing-setup
+**Analysis Date**: 2025-12-16
+**Artifacts Analyzed**: spec.md, plan.md, tasks.md, constitution.md
+
+---
+
+## Findings Table
+
+| ID | Category | Severity | Location(s) | Summary | Recommendation |
+|----|----------|----------|-------------|---------|----------------|
+| C1 | Constitution | HIGH | constitution.md:128, plan.md:23 | Constitution 指定 Maven 為建置工具，但 plan.md 和 tasks.md 使用 Gradle | 更新 constitution.md 的技術棧規範，將 Maven 改為 Gradle，或說明此為允許的例外 |
+| I1 | Inconsistency | MEDIUM | plan.md:101-102, tasks.md | plan.md 列出 `debitInsufficientBalance.groovy`，但缺少 `debitAccountFrozen.groovy` 契約 (帳戶凍結場景) | 新增 `debitAccountFrozen.groovy` 契約以覆蓋 ACCOUNT_FROZEN 錯誤場景 |
+| I2 | Inconsistency | MEDIUM | spec.md:124-125, tasks.md | spec.md 定義 DebitTransaction entity，但 tasks.md 未包含此 entity 的實作任務 | 評估是否需要 DebitTransaction 持久化，若需要則新增對應任務 |
+| U1 | Underspecification | MEDIUM | spec.md:12, tasks.md | Clarification 提到需驗證所有狀態轉換 (PENDING→ACTIVE↔FROZEN→CLOSED)，但 tasks.md 只有 freeze/unfreeze 契約 | 新增 activateAccount.groovy 和 closeAccount.groovy 契約 |
+| U2 | Underspecification | LOW | spec.md:96 | Edge Case "儲存庫無法連線時重試" 缺乏對應的測試任務 | 考慮新增整合測試驗證重試機制 |
+| U3 | Underspecification | LOW | spec.md:97 | Edge Case "多個 Provider 版本的 Stub 同時存在" 缺乏具體實作任務 | 在 US4 Phase 新增版本選擇測試任務 |
+| G1 | Coverage Gap | MEDIUM | FR-011 | FR-011 要求支援正則表達式和 Matcher，但 tasks.md 未明確包含 Matcher 使用範例 | 在契約任務描述中明確要求使用 regex matcher |
+| G2 | Coverage Gap | LOW | FR-013 | FR-013 要求分散式追蹤，但 tasks.md 只有日誌和指標配置，缺少 Spring Cloud Sleuth/Micrometer Tracing 配置 | 新增 T078 配置分散式追蹤 |
+
+---
+
+## Coverage Summary Table
+
+| Requirement Key | Has Task? | Task IDs | Notes |
+|-----------------|-----------|----------|-------|
+| FR-001 (契約定義語言) | ✅ | T027-T033 | 使用 Groovy DSL |
+| FR-002 (契約包含完整規格) | ✅ | T027-T033 | 契約包含 request/response |
+| FR-003 (自動產生驗證測試) | ✅ | T034, T043 | ContractVerifierBase + build |
+| FR-004 (自動產生 Stub) | ✅ | T043, T044 | gradlew build + publishToMavenLocal |
+| FR-005 (Stub Runner 下載啟動) | ✅ | T045, T057 | AccountClientContractTest |
+| FR-006 (CI 執行契約測試) | ✅ | T058, T059, T062, T063 | CI Pipeline workflows |
+| FR-007 (測試失敗阻止合併) | ✅ | T061 | Branch protection documentation |
+| FR-008 (Provider 發布 Stub) | ✅ | T044, T058 | publishToMavenLocal + CI |
+| FR-009 (Consumer 下載 Stub) | ✅ | T045, T046 | Stub Runner configuration |
+| FR-010 (成功和錯誤場景) | ✅ | T028, T031 | getAccountNotFound, debitInsufficientBalance |
+| FR-011 (正則表達式/Matcher) | ⚠️ | T027-T033 | 需在契約中明確使用 |
+| FR-012 (本地和 CI 執行) | ✅ | T043, T057, T058, T059 | Local + CI |
+| FR-013 (完整可觀測性) | ⚠️ | T072-T075 | 缺少分散式追蹤配置 |
+| FR-014 (敏感資料遮罩) | ✅ | T027-T033 | 使用 ACC-XXX 格式 |
+
+**Legend**: ✅ = Covered | ⚠️ = Partially covered | ❌ = Not covered
+
+---
+
+## Constitution Alignment Issues
+
+| Principle | Status | Issue |
+|-----------|--------|-------|
+| I. 程式碼品質 | ✅ PASS | - |
+| II. 測試優先 (TDD/BDD) | ✅ PASS | tasks.md 明確要求先寫測試再實作 |
+| III. 契約驅動開發 | ✅ PASS | 契約包含 Precondition/Postcondition/Invariant |
+| IV. 領域驅動設計 | ✅ PASS | Account 為 Entity，使用 Repository pattern |
+| V. SOLID 原則 | ✅ PASS | 分層設計符合單一職責 |
+| VI. 六角形架構 | ✅ PASS | Domain/Application/Infrastructure 分層 |
+| 技術棧-建置工具 | ⚠️ CONFLICT | Constitution 指定 Maven，實際使用 Gradle |
+
+---
+
+## Unmapped Tasks
+
+無。所有任務皆可對應到 User Story 或 Setup/Polish phase。
+
+---
+
+## Metrics
+
+| Metric | Value |
+|--------|-------|
+| Total Functional Requirements | 14 |
+| Total User Stories | 4 |
+| Total Tasks | 77 |
+| Requirements Coverage % | 92.9% (13/14 fully covered) |
+| Ambiguity Count | 0 |
+| Duplication Count | 0 |
+| Critical Issues Count | 0 |
+| High Issues Count | 1 |
+| Medium Issues Count | 4 |
+| Low Issues Count | 3 |
+
+---
+
+## Next Actions
+
+### Immediate (Before `/speckit.implement`)
+
+1. **[HIGH] C1**: 更新 `.specify/memory/constitution.md` 第 128 行，將建置工具從 `Maven` 改為 `Gradle`，或在 plan.md 中記錄此為經核准的例外
+
+### Recommended Improvements
+
+2. **[MEDIUM] U1**: 新增帳戶狀態轉換契約
+   - 在 tasks.md Phase 3 新增: `T044a [P] [US1] Create activateAccount.groovy contract`
+   - 在 tasks.md Phase 3 新增: `T044b [P] [US1] Create closeAccount.groovy contract`
+
+3. **[MEDIUM] I1**: 新增帳戶凍結扣款失敗契約
+   - 在 tasks.md Phase 3 新增: `T031a [P] [US1] Create debitAccountFrozen.groovy contract`
+
+4. **[MEDIUM] G1**: 在契約任務描述中明確要求使用正則表達式 matcher
+   - 修改 T027-T033 描述，加入 "使用 regex() 或 matching() matcher"
+
+5. **[MEDIUM] I2**: 評估 DebitTransaction entity 需求
+   - 若需持久化交易記錄，新增對應的 domain entity 和 repository 任務
+
+### Optional Enhancements
+
+6. **[LOW] G2**: 新增分散式追蹤配置任務
+   - 在 Phase 7 新增: `T078 [P] Add Spring Cloud Sleuth/Micrometer Tracing configuration`
+
+7. **[LOW] U2/U3**: 新增 Edge Case 測試任務
+   - 考慮在 Phase 4 或 Phase 6 新增儲存庫重試和版本選擇的整合測試
+
+---
+
+## Summary
+
+**Overall Status**: ✅ READY FOR IMPLEMENTATION (with minor recommendations)
+
+本規格分析未發現 CRITICAL 等級問題。主要發現為:
+
+1. **建置工具不一致** (HIGH): Constitution 指定 Maven，但實際使用 Gradle。建議更新 Constitution 或記錄例外。
+
+2. **帳戶狀態機覆蓋不完整** (MEDIUM): spec.md 提到完整狀態機，但契約只覆蓋部分轉換。
+
+3. **可觀測性配置不完整** (LOW): 缺少分散式追蹤配置。
+
+建議在開始實作前解決 HIGH 等級的 Constitution 衝突問題。
+
+---
+
+*Generated by /speckit.analyze on 2025-12-16*

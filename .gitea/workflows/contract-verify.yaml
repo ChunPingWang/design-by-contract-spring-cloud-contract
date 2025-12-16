@@ -1,0 +1,73 @@
+name: Contract Verification
+
+on:
+  schedule:
+    # Run daily at midnight UTC
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    inputs:
+      verify_all:
+        description: 'Verify all contracts'
+        required: false
+        default: 'true'
+
+jobs:
+  verify-contracts:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Build and publish Provider stubs
+      run: ./gradlew :account-service:build :account-service:publishToMavenLocal
+
+    - name: Verify Consumer can use Provider contracts
+      run: ./gradlew :payment-service:test
+
+    - name: Generate verification report
+      run: |
+        echo "## Contract Verification Report" > verification-report.md
+        echo "" >> verification-report.md
+        echo "**Date**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> verification-report.md
+        echo "" >> verification-report.md
+        echo "### Provider: account-service" >> verification-report.md
+        echo "- Contract tests: PASSED" >> verification-report.md
+        echo "- Stubs generated: YES" >> verification-report.md
+        echo "" >> verification-report.md
+        echo "### Consumer: payment-service" >> verification-report.md
+        echo "- Contract tests against stubs: PASSED" >> verification-report.md
+        echo "" >> verification-report.md
+        echo "### Contracts Verified" >> verification-report.md
+        echo "- getAccount" >> verification-report.md
+        echo "- getAccountNotFound" >> verification-report.md
+        echo "- createAccount" >> verification-report.md
+        echo "- debitAccount" >> verification-report.md
+        echo "- debitInsufficientBalance" >> verification-report.md
+        echo "- freezeAccount" >> verification-report.md
+        echo "- unfreezeAccount" >> verification-report.md
+
+    - name: Upload verification report
+      uses: actions/upload-artifact@v4
+      with:
+        name: contract-verification-report
+        path: verification-report.md
+
+    - name: Upload test reports
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: verification-test-reports
+        path: |
+          account-service/build/reports/tests/
+          payment-service/build/reports/tests/
