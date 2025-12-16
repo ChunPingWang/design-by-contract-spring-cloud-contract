@@ -2,6 +2,57 @@
 
 > 使用 Spring Cloud Contract 實現契約驅動開發的教學專案
 
+本專案展示如何在微服務架構中應用 **Design by Contract (DbC)** 設計原則，並透過 **Spring Cloud Contract** 實現 Provider 與 Consumer 之間的契約測試，確保服務間的整合正確性。
+
+---
+
+## 專案簡介
+
+### 背景與動機
+
+在微服務架構中，服務間的通訊是一個常見的挑戰。傳統的整合測試需要同時啟動多個服務，成本高且難以維護。**契約測試 (Contract Testing)** 提供了一種更輕量級的解決方案：
+
+- **Provider** 定義 API 契約，承諾提供特定格式的回應
+- **Consumer** 基於契約產生的 Stub 進行測試，無需啟動真實的 Provider
+- 契約作為 Provider 與 Consumer 之間的「合約」，確保雙方的期望一致
+
+### 本專案的目標
+
+1. 示範如何使用 **Spring Cloud Contract** 實現契約驅動開發
+2. 展示 **Design by Contract** 三大核心元素在 API 設計中的應用
+3. 提供完整的 **Provider/Consumer** 契約測試範例
+4. 整合 **Cucumber BDD** 進行行為驅動開發測試
+
+### 專案架構
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                          契約測試流程                                 │
+│                                                                      │
+│   ┌──────────────────┐         契約 (Groovy DSL)         ┌─────────────────┐
+│   │                  │  ─────────────────────────────▶  │                 │
+│   │  account-service │                                   │ payment-service │
+│   │    (Provider)    │  ◀─────────────────────────────  │   (Consumer)    │
+│   │                  │         Stub JAR (WireMock)       │                 │
+│   └──────────────────┘                                   └─────────────────┘
+│           │                                                      │
+│           │                                                      │
+│           ▼                                                      ▼
+│   ┌──────────────────┐                               ┌─────────────────┐
+│   │ Contract Verifier │                               │   Stub Runner   │
+│   │  自動產生測試驗證  │                               │  自動啟動 Mock  │
+│   │  Provider 實作    │                               │  服務供測試用    │
+│   └──────────────────┘                               └─────────────────┘
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 服務說明
+
+| 服務 | 角色 | 說明 |
+|------|------|------|
+| **account-service** | Provider | 帳戶服務 - 提供帳戶查詢、建立、扣款、凍結/解凍等 API |
+| **payment-service** | Consumer | 支付服務 - 呼叫帳戶服務進行支付交易 |
+
 ---
 
 ## Speckit 工作流程指令
@@ -122,14 +173,16 @@ specify init --ai copilot --script sh --here
 
 ## 目錄
 
-1. [Speckit 工作流程指令](#speckit-工作流程指令)
-2. [Design by Contract 概念](#design-by-contract-概念)
-3. [六角形架構 (Hexagonal Architecture)](#六角形架構-hexagonal-architecture)
-4. [Spring Cloud Contract 介紹](#spring-cloud-contract-介紹)
-5. [專案結構](#專案結構)
-6. [快速開始](#快速開始)
-7. [契約定義教學](#契約定義教學)
-8. [測試執行](#測試執行)
+1. [專案簡介](#專案簡介)
+2. [Speckit 工作流程指令](#speckit-工作流程指令)
+3. [Design by Contract 概念](#design-by-contract-概念)
+4. [六角形架構 (Hexagonal Architecture)](#六角形架構-hexagonal-architecture)
+5. [Spring Cloud Contract 介紹](#spring-cloud-contract-介紹)
+6. [WireMock 與 Stub Runner](#wiremock-與-stub-runner)
+7. [專案結構](#專案結構)
+8. [快速開始](#快速開始)
+9. [契約定義教學](#契約定義教學)
+10. [測試執行](#測試執行)
 
 ---
 
@@ -337,6 +390,177 @@ Spring Cloud Contract 是一個支援 Consumer Driven Contracts 的測試框架�
 1. **Contract DSL** - 用 Groovy 定義契約
 2. **Contract Verifier** - 從契約產生測試，驗證 Provider
 3. **Stub Runner** - Consumer 端使用，自動啟動 Mock 服務
+
+---
+
+## WireMock 與 Stub Runner
+
+### 什麼是 WireMock？
+
+**WireMock** 是一個用於模擬 HTTP 服務的工具，Spring Cloud Contract 使用它來產生和執行 Stub。當 Provider 定義契約後，會自動產生 WireMock 格式的 JSON 映射檔，讓 Consumer 可以在不啟動真實 Provider 的情況下進行測試。
+
+### Stub JAR 的產生與使用
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        Stub JAR 生命週期                         │
+│                                                                  │
+│  1. Provider 定義契約                                            │
+│     account-service/src/test/resources/contracts/               │
+│     └── account/                                                │
+│         └── getAccount.groovy                                   │
+│                                                                  │
+│  2. 建置產生 Stub JAR                                            │
+│     ./gradlew :account-service:verifierStubsJar                 │
+│     └── build/libs/account-service-1.0.0-SNAPSHOT-stubs.jar    │
+│                                                                  │
+│  3. 發布到 Maven 倉庫                                            │
+│     ./gradlew :account-service:publishToMavenLocal              │
+│     └── ~/.m2/repository/com/example/account-service/           │
+│                                                                  │
+│  4. Consumer 使用 Stub                                           │
+│     @AutoConfigureStubRunner(                                   │
+│         ids = "com.example:account-service:+:stubs:6565"        │
+│     )                                                           │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Stub JAR 內容結構
+
+```
+account-service-1.0.0-SNAPSHOT-stubs.jar
+├── META-INF/
+│   └── com.example/
+│       └── account-service/
+│           └── 1.0.0-SNAPSHOT/
+│               └── contracts/
+│                   └── account/
+│                       ├── getAccount.groovy
+│                       ├── getAccountNotFound.groovy
+│                       └── ...
+└── mappings/
+    └── account/
+        ├── getAccount.json          ← WireMock 映射
+        ├── getAccountNotFound.json
+        └── ...
+```
+
+### WireMock 映射檔範例
+
+從契約自動產生的 WireMock JSON 映射：
+
+```json
+{
+  "id": "get_account_success",
+  "request": {
+    "method": "GET",
+    "urlPath": "/api/v1/accounts/ACC-001"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "accountNumber": "ACC-001",
+      "ownerName": "王大明",
+      "balance": 10000.00,
+      "status": "ACTIVE"
+    }
+  }
+}
+```
+
+### Stub Runner 配置
+
+#### 方式一：使用 @AutoConfigureStubRunner 註解
+
+```java
+@SpringBootTest(
+    webEnvironment = SpringBootTest.WebEnvironment.NONE,
+    properties = "account-service.url=http://localhost:6565"
+)
+@AutoConfigureStubRunner(
+    ids = "com.example:account-service:+:stubs:6565",
+    stubsMode = StubRunnerProperties.StubsMode.LOCAL
+)
+public class AccountClientContractTest {
+
+    @Autowired
+    private AccountClient accountClient;
+
+    @Test
+    void shouldGetAccountSuccessfully() {
+        AccountDto account = accountClient.getAccount("ACC-001");
+
+        assertThat(account.accountNumber()).isEqualTo("ACC-001");
+        assertThat(account.ownerName()).isEqualTo("王大明");
+    }
+}
+```
+
+#### 參數說明
+
+| 參數 | 說明 | 範例 |
+|------|------|------|
+| `ids` | Stub 座標 (groupId:artifactId:version:classifier:port) | `com.example:account-service:+:stubs:6565` |
+| `stubsMode` | Stub 來源模式 | `LOCAL` (本地 Maven), `REMOTE` (遠端倉庫), `CLASSPATH` |
+| `repositoryRoot` | Maven 倉庫 URL | `stubs://file://~/.m2/repository` |
+
+#### 方式二：使用 application.yml 配置
+
+```yaml
+# application-contract-test.yml
+stubrunner:
+  ids:
+    - com.example:account-service:+:stubs:6565
+  stubs-mode: LOCAL
+
+account-service:
+  url: http://localhost:6565
+```
+
+### 常見問題與解決方案
+
+#### 1. Stub 找不到
+
+```
+Could not find stub for com.example:account-service:+:stubs
+```
+
+**解決方案：**
+```bash
+# 確認已發布 Stub 到本地 Maven
+./gradlew :account-service:publishToMavenLocal
+
+# 檢查 Stub JAR 是否存在
+ls ~/.m2/repository/com/example/account-service/*/
+```
+
+#### 2. Port 衝突
+
+```
+Port 6565 is already in use
+```
+
+**解決方案：** 變更 Stub Runner 埠號
+```java
+@AutoConfigureStubRunner(
+    ids = "com.example:account-service:+:stubs:8090"  // 使用其他埠號
+)
+```
+
+#### 3. Feign Client URL 不匹配
+
+**解決方案：** 確保 Feign Client URL 與 Stub Runner 埠號一致
+```java
+@SpringBootTest(
+    properties = "account-service.url=http://localhost:6565"
+)
+@AutoConfigureStubRunner(
+    ids = "com.example:account-service:+:stubs:6565"
+)
+```
 
 ---
 
