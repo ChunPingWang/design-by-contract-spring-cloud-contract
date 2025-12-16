@@ -69,20 +69,54 @@ specify init --ai copilot --script sh --here
 | 項目 | 狀態 |
 |------|------|
 | 分支 | `001-contract-testing-setup` |
-| 階段 | 基礎架構建置完成 |
+| 階段 | ✅ 完整實作完成 |
 | Provider | account-service (帳戶服務) |
 | Consumer | payment-service (支付服務) |
+
+### 測試涵蓋率
+
+| 服務 | 涵蓋率 | 狀態 |
+|------|--------|------|
+| account-service | **97%** | ✅ 通過 |
+| payment-service | **100%** | ✅ 通過 |
+
+### 測試統計
+
+| 類型 | account-service | payment-service |
+|------|-----------------|-----------------|
+| 單元測試 | 59 個 | 17 個 |
+| 契約測試 | 8 個 | 4 個 |
+| Cucumber BDD | 5 個場景 | 2 個場景 |
+
+### 涵蓋率細項
+
+**account-service:**
+| 套件 | 涵蓋率 |
+|------|--------|
+| domain | 100% |
+| application | 93% |
+| controller | 99% |
+
+**payment-service:**
+| 套件 | 涵蓋率 |
+|------|--------|
+| domain | 100% |
+| application | 100% |
+| controller | 100% |
 
 ## 技術棧
 
 - **Java 17** - 主要開發語言
 - **Spring Boot 3.2** - 應用框架
 - **Spring Cloud Contract 4.x** - 契約測試框架
-- **Gradle** - 建置工具
+- **Gradle 8.x** - 建置工具
 - **JUnit 5** - 單元測試框架
-- **Cucumber** - BDD 測試框架
+- **Cucumber 7.x** - BDD 測試框架
+- **JaCoCo** - 測試涵蓋率報告
 - **H2** - 測試用記憶體資料庫
 - **OpenFeign** - 宣告式 HTTP 客戶端
+- **Micrometer + Prometheus** - 監控指標
+- **Logback + JSON** - 結構化日誌
 
 ---
 
@@ -328,22 +362,58 @@ design-by-contract-spring-cloud-contract/
 │   │   │       ├── dto/
 │   │   │       └── exception/
 │   │   └── resources/
-│   │       └── application.yml
-│   └── build.gradle
+│   │       ├── application.yml
+│   │       └── logback-spring.xml   # JSON 結構化日誌
+│   ├── src/test/
+│   │   ├── java/com/example/account/
+│   │   │   ├── ContractVerifierBase.java
+│   │   │   ├── domain/              # 領域層單元測試
+│   │   │   ├── infrastructure/controller/
+│   │   │   └── cucumber/            # BDD 測試
+│   │   └── resources/
+│   │       ├── contracts/account/   # Groovy 契約
+│   │       └── features/            # Cucumber 特性檔
+│   ├── build.gradle
+│   └── Dockerfile
 │
 ├── payment-service/                 # Consumer - 支付服務
 │   ├── src/
 │   │   ├── main/java/com/example/payment/
-│   │   │   └── PaymentServiceApplication.java
+│   │   │   ├── PaymentServiceApplication.java
+│   │   │   ├── domain/
+│   │   │   ├── application/
+│   │   │   └── infrastructure/
+│   │   │       ├── controller/
+│   │   │       └── client/          # Feign 客戶端
 │   │   └── resources/
-│   │       └── application.yml
-│   └── build.gradle (待建立)
+│   │       ├── application.yml
+│   │       └── logback-spring.xml
+│   ├── src/test/
+│   │   ├── java/com/example/payment/
+│   │   │   ├── contract/            # Consumer 契約測試
+│   │   │   ├── application/
+│   │   │   ├── infrastructure/controller/
+│   │   │   └── cucumber/
+│   │   └── resources/features/
+│   ├── build.gradle
+│   └── Dockerfile
+│
+├── docs/                            # 文件
+│   ├── contract-versioning.md       # 契約版本管理
+│   ├── ci-cd-setup.md               # CI/CD 設定
+│   └── breaking-change-detection.md # 破壞性變更偵測
+│
+├── .github/workflows/               # CI/CD 工作流程
+│   ├── account-service-ci.yaml
+│   ├── payment-service-ci.yaml
+│   └── contract-verify.yaml
 │
 ├── specs/                           # 規格文件
 │   └── 001-contract-testing-setup/
-│       ├── spec.md                  # 功能規格
-│       ├── plan.md                  # 實作計畫
-│       └── tasks.md                 # 任務清單
+│       ├── spec.md
+│       ├── plan.md
+│       ├── tasks.md
+│       └── quickstart.md
 │
 ├── build.gradle                     # 根專案建置設定
 ├── settings.gradle                  # 多模組設定
@@ -364,11 +434,14 @@ design-by-contract-spring-cloud-contract/
 ### 建置專案
 
 ```bash
-# 建置整個專案
-./gradlew build
+# 建置整個專案（含測試與涵蓋率驗證）
+./gradlew clean build
 
 # 只建置 account-service
 ./gradlew :account-service:build
+
+# 只建置 payment-service
+./gradlew :payment-service:build
 ```
 
 ### 執行契約測試
@@ -379,6 +452,33 @@ design-by-contract-spring-cloud-contract/
 
 # Provider 端 - 產生 Stub JAR
 ./gradlew :account-service:verifierStubsJar
+
+# 發布 Stub 到本地 Maven 倉庫
+./gradlew :account-service:publishToMavenLocal
+
+# Consumer 端 - 使用 Stub 執行契約測試
+./gradlew :payment-service:test
+```
+
+### 執行測試涵蓋率報告
+
+```bash
+# 產生涵蓋率報告
+./gradlew test jacocoTestReport
+
+# 報告位置:
+# - account-service/build/reports/jacoco/test/html/index.html
+# - payment-service/build/reports/jacoco/test/html/index.html
+
+# 驗證涵蓋率門檻（70%）
+./gradlew jacocoTestCoverageVerification
+```
+
+### 執行 Cucumber BDD 測試
+
+```bash
+# 執行所有 Cucumber 測試
+./gradlew test --tests "*Cucumber*"
 ```
 
 ### 啟動服務
@@ -386,6 +486,21 @@ design-by-contract-spring-cloud-contract/
 ```bash
 # 啟動帳戶服務
 ./gradlew :account-service:bootRun
+
+# 啟動支付服務
+./gradlew :payment-service:bootRun
+```
+
+### Docker 部署
+
+```bash
+# 建置 Docker 映像
+docker build -t account-service:latest ./account-service
+docker build -t payment-service:latest ./payment-service
+
+# 執行容器
+docker run -p 8080:8080 account-service:latest
+docker run -p 8081:8081 -e ACCOUNT_SERVICE_URL=http://host.docker.internal:8080 payment-service:latest
 ```
 
 ---
